@@ -176,8 +176,8 @@ public class SoundListener {
         }
 
         private void postWavToServer(byte[] wavFileHeader) {
-//            final String urlString = "http://34.220.197.162:8080/"; // URL to call
-            final String urlString = "http://10.0.2.2:8080/"; // URL to call
+            final String urlString = "http://34.220.197.162:8080/"; // URL to call
+//            final String urlString = "http://10.0.2.2:8080/"; // URL to call
             try {
                 URL url = new URL(urlString);
                 HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();

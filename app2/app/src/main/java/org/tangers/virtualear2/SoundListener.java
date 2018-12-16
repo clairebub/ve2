@@ -6,9 +6,15 @@ import android.media.MediaRecorder;
 import android.os.Environment;
 import android.util.Log;
 
+import java.io.BufferedOutputStream;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -158,13 +164,38 @@ public class SoundListener {
             FileOutputStream outputStream = new FileOutputStream(wavFile);
 
             int numChannels = 1;
-            outputStream.write(WavFileHeader.getHeader(SAMPLE_RATE, numChannels, numSamples));
+            byte[] wavFileHeader = WavFileHeader.getHeader(SAMPLE_RATE, numChannels, numSamples);
+            outputStream.write(wavFileHeader);
             Log.d(TAG, "writing Wav file with " + numSamples + " samples");
             outputStream.write(mBuffer, 0, mBufferPos);
             outputStream.close();
 
             //
+            postWavToServer(wavFileHeader);
             mCallback.onSoundClassified(fileName);
+        }
+
+        private void postWavToServer(byte[] wavFileHeader) {
+//            final String urlString = "http://34.220.197.162:8080/"; // URL to call
+            final String urlString = "http://10.0.2.2:8080/"; // URL to call
+            try {
+                URL url = new URL(urlString);
+                HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                urlConnection.setRequestMethod("POST");
+                urlConnection.setDoOutput(true);
+                OutputStream out = new BufferedOutputStream(urlConnection.getOutputStream());
+                out.write(wavFileHeader);
+                out.write(mBuffer, 0, mBufferPos);
+                out.flush();
+                out.close();
+
+                int responseCode = urlConnection.getResponseCode();
+                Log.d("deebug", "POST Response Code :: " + responseCode);
+
+                urlConnection.disconnect();
+            } catch (Exception e) {
+                Log.d("deebug", e.toString());
+            }
         }
 
         private boolean isHearingSound(byte[] buffer, int start, int len) {

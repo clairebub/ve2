@@ -25,12 +25,16 @@ class S(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         self._set_headers()
-        
+
     def do_POST(self):
-        # Doesn't do anything with posted data
+        content_len = int(self.headers.getheader('content-length', 0))
+        post_body = self.rfile.read(content_len)
+        print("deebug: content_len=", content_len)
+        print("deebug: post_body.length=", len(post_body))
+
         self._set_headers()
         self.wfile.write("<html><body><h1>POST!</h1></body></html>")
-        
+
 def run(server_class=HTTPServer, handler_class=S, port=1234):
     server_address = ('', port)
     httpd = server_class(server_address, handler_class)

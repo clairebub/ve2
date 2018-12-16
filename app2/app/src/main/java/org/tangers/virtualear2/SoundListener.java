@@ -47,33 +47,31 @@ public class SoundListener {
     private class SoundListenerRunnable implements Runnable {
         private final Callback mCallback;
         private final AudioRecord mAudioRecord;
-        private final int mBufferSizeInBytes;
+        private final int mBytesPerRead;
         private final byte[] mBuffer;
         private int mBufferPos;
         private long mLastBufferFlushTimeMillis;
 
         public SoundListenerRunnable(Callback callback) {
             mCallback = callback;
-            int bufferSize = AudioRecord.getMinBufferSize(
+            mBytesPerRead = AudioRecord.getMinBufferSize(
                     SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT);
-            Log.d(TAG, String.format("AudioRecord.getMinBufferSize() is %d", bufferSize));
-            if (bufferSize < SAMPLE_RATE * AUDIO_LENGTH_IN_SECONDS) {
-                bufferSize = SAMPLE_RATE * AUDIO_LENGTH_IN_SECONDS;
-                Log.d(TAG, String.format(
-                        "buffer size set to %d for %d seconds of audio",
-                        bufferSize, AUDIO_LENGTH_IN_SECONDS));
+            Log.d(TAG, String.format("AudioRecord.getMinBufferSize() is %d", mBytesPerRead));
+            int bufferSize = SAMPLE_RATE * AUDIO_LENGTH_IN_SECONDS;
+            if (mBytesPerRead > bufferSize) {
+                bufferSize = mBytesPerRead;
+                Log.w(TAG, String.format("BufferSize increased to match minBufferSize %d", bufferSize));
             }
-            mBufferSizeInBytes = bufferSize;
-            mBuffer = new byte[mBufferSizeInBytes];
+            mBuffer = new byte[bufferSize];
             mBufferPos = 0;
             mAudioRecord = new AudioRecord(
                     MediaRecorder.AudioSource.MIC,
                     SAMPLE_RATE,
                     AUDIO_CHANNEL,
                     AUDIO_ENCODING,
-                    mBufferSizeInBytes);
+                    mBuffer.length);
             if (mAudioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
                 mAudioRecord.release();
                 throw new IllegalStateException();
@@ -90,13 +88,21 @@ public class SoundListener {
                     break;
                 }
                 final long now = System.currentTimeMillis();
+                /*
                 if (now >= mLastBufferFlushTimeMillis + AUDIO_LENGTH_IN_SECONDS * 1000) {
                     flushAudioBuffer();
                     mLastBufferFlushTimeMillis = now;
+                } */
+                int bytesToRead = mBuffer.length - mBufferPos;
+                if (bytesToRead > mBytesPerRead) {
+                    bytesToRead = mBytesPerRead;
                 }
-                final int bytesRead = mAudioRecord.read(mBuffer, mBufferPos, mBuffer.length - mBufferPos);
+//                Log.d("deebug", String.format("To read %d bytes, mBufferPos=%d", bytesToRead, mBufferPos));
+                final int bytesRead = mAudioRecord.read(mBuffer, mBufferPos, bytesToRead);
+//                Log.d("deebug", String.format("got %d bytes", bytesRead));
                 if (isHearingSound(mBuffer, mBufferPos, bytesRead)) {
                     mBufferPos += bytesRead;
+//                    Log.d("deebug", String.format("got %d bytes, mBufferPos=%d", bytesRead, mBufferPos));
                 }
                 if (mBufferPos > mBuffer.length) {
                     throw new IllegalStateException("buffer overflow");
@@ -117,17 +123,20 @@ public class SoundListener {
             try {
                 // write to an external wav file if we have enough samples
                 int numSamples = mBufferPos / 2;
-                if (numSamples < SAMPLE_RATE) {
+                if (numSamples >= SAMPLE_RATE) {
                     writeWavFile();
+                    // but always reset the buffer and run classifer on the signals collected in the buffer
+                    classifySound();
+                    mBufferPos = 0;
                 } else  {
-                    Log.d(TAG, String.format("Not enough audio signal samples: %d", numSamples));
+                    mCallback.onSoundClassified(String.format(
+                            "Timestamp %s: Not enough audio signal samples [%d]",
+                            new SimpleDateFormat("HH:mm:ss").format(new Date()),
+                            numSamples));
                 }
             } catch(IOException ex) {
                 Log.e(TAG, ex.toString());
             }
-            // but always reset the buffer and run classifer on the signals collected in the buffer
-            classifySound();
-            mBufferPos = 0;
         }
 
         private void classifySound() {
@@ -160,9 +169,10 @@ public class SoundListener {
 
         private boolean isHearingSound(byte[] buffer, int start, int len) {
             final int AMPLITUDE_THRESHOLD = 1500;
-            for (int i = start; i < len - 1; i += 2) {
+            for (int i = start; i < start + len - 1; i += 2) {
                 // The buffer has LINEAR16 in little endian.
                 int s = buffer[i + 1];
+//                Log.d("deebug", String.format("isHearingSound %d %d %d", i, s, buffer[i]));
                 if (s < 0) s *= -1;
                 s <<= 8;
                 s += Math.abs(buffer[i]);
